@@ -2,88 +2,194 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Basic FPS Example</title>
+  <title>FPS Game AI</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: black; }
     canvas { display: block; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-family: Arial;
+      z-index: 2;
+    }
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      background: white;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+      border-radius: 50%;
+    }
+    .bar {
+      height: 10px;
+      width: 100px;
+      background: red;
+      border: 1px solid white;
+    }
+    .bar span {
+      display: block;
+      height: 100%;
+      background: limegreen;
+      width: 100%;
+    }
   </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.1/examples/js/controls/PointerLockControls.js"></script>
-<script>
-  let camera, scene, renderer, controls;
-  let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-  let velocity = new THREE.Vector3();
+  <div id="hud">
+    <div>Score: <span id="score">0</span></div>
+    <div>Reloading: <span id="reloading">No</span></div>
+    <div>Enemy Health:</div>
+    <div class="bar"><span id="enemyHealthBar"></span></div>
+    <div>Player Health:</div>
+    <div class="bar"><span id="playerHealthBar"></span></div>
+  </div>
+  <div id="crosshair"></div>
 
-  init();
-  animate();
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.1/examples/js/controls/PointerLockControls.js"></script>
+  <script>
+    let camera, scene, renderer, controls;
+    let move = { forward: false, backward: false, left: false, right: false };
+    let velocity = new THREE.Vector3();
+    let score = 0;
+    let reloading = false;
 
-  function init() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x888888);
+    const scoreEl = document.getElementById('score');
+    const reloadEl = document.getElementById('reloading');
+    const enemyBar = document.getElementById('enemyHealthBar');
+    const playerBar = document.getElementById('playerHealthBar');
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+    let enemy, enemyHealth = 100, playerHealth = 100;
 
-    renderer = new THREE.WebGLRenderer();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+    let shootSound = new Audio("https://cdn.pixabay.com/download/audio/2022/03/21/audio_f594390d4c.mp3?filename=laser-gun-81770.mp3");
+    let hitSound = new Audio("https://cdn.pixabay.com/download/audio/2022/03/01/audio_f4a96bb4b2.mp3?filename=hitmarker-110249.mp3");
 
-    // Add floor
-    const floorGeometry = new THREE.PlaneGeometry(1000, 1000);
-    const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
+    init();
+    animate();
 
-    // Add box
-    const box = new THREE.Mesh(
-      new THREE.BoxGeometry(5, 5, 5),
-      new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
-    box.position.set(0, 2.5, -20);
-    scene.add(box);
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x111111);
 
-    // Pointer lock controls
-    controls = new THREE.PointerLockControls(camera, document.body);
-    document.body.addEventListener('click', () => controls.lock(), false);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 1000);
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
 
-    const onKeyDown = (e) => {
-      switch (e.code) {
-        case 'KeyW': moveForward = true; break;
-        case 'KeyS': moveBackward = true; break;
-        case 'KeyA': moveLeft = true; break;
-        case 'KeyD': moveRight = true; break;
-      }
-    };
-    const onKeyUp = (e) => {
-      switch (e.code) {
-        case 'KeyW': moveForward = false; break;
-        case 'KeyS': moveBackward = false; break;
-        case 'KeyA': moveLeft = false; break;
-        case 'KeyD': moveRight = false; break;
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
-  }
+      const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(1000, 1000),
+        new THREE.MeshBasicMaterial({ color: 0x222222 })
+      );
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
 
-  function animate() {
-    requestAnimationFrame(animate);
+      controls = new THREE.PointerLockControls(camera, document.body);
+      document.body.addEventListener('click', () => controls.lock());
 
-    if (controls.isLocked) {
-      const speed = 0.1;
-      velocity.set(0, 0, 0);
-      if (moveForward) velocity.z -= speed;
-      if (moveBackward) velocity.z += speed;
-      if (moveLeft) velocity.x -= speed;
-      if (moveRight) velocity.x += speed;
-      controls.moveRight(velocity.x);
-      controls.moveForward(velocity.z);
+      document.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keyup', onKeyUp);
+      document.addEventListener('click', shoot);
+
+      spawnEnemy();
     }
 
-    renderer.render(scene, camera);
-  }
-</script>
+    function spawnEnemy() {
+      const geo = new THREE.BoxGeometry(5, 5, 5);
+      const mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+      enemy = new THREE.Mesh(geo, mat);
+      enemy.position.set((Math.random() - 0.5) * 100, 2.5, (Math.random() - 0.5) * 100);
+      enemyHealth = 100;
+      updateBars();
+      scene.add(enemy);
+    }
+
+    function updateBars() {
+      enemyBar.style.width = enemyHealth + '%';
+      playerBar.style.width = playerHealth + '%';
+    }
+
+    function shoot() {
+      if (reloading || !controls.isLocked) return;
+      shootSound.play();
+      reloading = true;
+      reloadEl.textContent = 'Yes';
+      setTimeout(() => {
+        reloading = false;
+        reloadEl.textContent = 'No';
+      }, 400);
+
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+      const hit = ray.intersectObject(enemy);
+      if (hit.length > 0) {
+        enemyHealth -= 50;
+        hitSound.play();
+        updateBars();
+        if (enemyHealth <= 0) {
+          scene.remove(enemy);
+          score++;
+          scoreEl.textContent = score;
+          setTimeout(spawnEnemy, 1000);
+        }
+      }
+    }
+
+    function onKeyDown(e) {
+      if (e.code === 'KeyW') move.forward = true;
+      if (e.code === 'KeyS') move.backward = true;
+      if (e.code === 'KeyA') move.left = true;
+      if (e.code === 'KeyD') move.right = true;
+    }
+
+    function onKeyUp(e) {
+      if (e.code === 'KeyW') move.forward = false;
+      if (e.code === 'KeyS') move.backward = false;
+      if (e.code === 'KeyA') move.left = false;
+      if (e.code === 'KeyD') move.right = false;
+    }
+
+    function enemyAI() {
+      if (!enemy) return;
+
+      const enemySpeed = 0.05;
+      const dir = new THREE.Vector3();
+      camera.getWorldPosition(dir);
+      dir.sub(enemy.position).normalize();
+      enemy.position.addScaledVector(dir, enemySpeed);
+
+      // Damage player if close
+      if (enemy.position.distanceTo(camera.position) < 5) {
+        playerHealth -= 0.5;
+        updateBars();
+        if (playerHealth <= 0) {
+          alert("Game Over! Reload the page to try again.");
+          location.reload();
+        }
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (controls.isLocked) {
+        velocity.set(0, 0, 0);
+        const speed = 0.1;
+        if (move.forward) velocity.z -= speed;
+        if (move.backward) velocity.z += speed;
+        if (move.left) velocity.x -= speed;
+        if (move.right) velocity.x += speed;
+
+        controls.moveRight(velocity.x);
+        controls.moveForward(velocity.z);
+        enemyAI();
+      }
+
+      renderer.render(scene, camera);
+    }
+  </script>
 </body>
 </html>
